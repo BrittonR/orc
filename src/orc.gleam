@@ -1,6 +1,8 @@
+import cluster
 import gleam/dict
 import gleam/dynamic
 import gleam/dynamic/decode
+import gleam/erlang
 import gleam/erlang/process
 import gleam/int
 import gleam/io
@@ -30,8 +32,10 @@ pub fn main() {
   io.println("\n=== VM Example ===")
   vm_example()
 
-  io.println("\n=== Shellout Example ===")
-  file_watcher()
+  io.println("\n=== Cluster Example ===")
+  cluster_example()
+  // io.println("\n=== Shellout Example ===")
+  // file_watcher()
 }
 
 // --- Email Example ---
@@ -427,5 +431,189 @@ fn find_gleam_files() -> Result(set.Set(String), String) {
       Error(
         "Command failed with code " <> int.to_string(code) <> ": " <> message,
       )
+  }
+}
+
+fn cluster_example() {
+  io.println("\n=== Cluster Example ===")
+
+  // Check if we're already in distributed mode
+  let current_node = cluster.get_node_name()
+  let is_distributed = current_node != "nonode@nohost"
+
+  io.println("Current node: " <> current_node)
+
+  case is_distributed {
+    True -> {
+      io.println("Running in distributed mode")
+    }
+    False -> {
+      io.println(
+        "Not running in distributed mode. Attempting to start distributed system...",
+      )
+
+      // Prompt for node name
+      io.print("Enter node name (e.g., node1): ")
+      let node_name = case erlang.get_line("") {
+        Ok(line) -> string.trim(line)
+        Error(_) -> "node1"
+      }
+
+      // Prompt for cookie
+      io.print("Enter cookie for authentication (e.g., mycookie): ")
+      let cookie = case erlang.get_line("") {
+        Ok(line) -> string.trim(line)
+        Error(_) -> "mycookie"
+      }
+
+      // Start distributed system with cookie
+      case cluster.start_distributed(node_name, cookie) {
+        Ok(_) -> {
+          io.println(
+            "Successfully started distributed system as: "
+            <> cluster.get_node_name(),
+          )
+          io.println("Cookie set to: " <> cookie)
+        }
+        Error(e) -> {
+          io.println("Failed to start distributed system: " <> e)
+        }
+      }
+    }
+  }
+
+  // Show current cluster status
+  show_cluster_status()
+
+  // Interactive loop for cluster management
+  cluster_interactive_loop()
+}
+
+// Helper function to display current cluster status
+fn show_cluster_status() {
+  io.println("\n=== Cluster Status ===")
+  io.println("Local node: " <> cluster.local_node())
+
+  case cluster.is_clustered() {
+    True -> {
+      io.println("\nConnected nodes:")
+      list.each(cluster.list_nodes(), fn(node) { io.println("  - " <> node) })
+
+      io.println("\nKhepri cluster members:")
+      case cluster.list_members() {
+        Ok(members) -> {
+          case list.length(members) {
+            0 -> io.println("  No members (not part of a Khepri cluster)")
+            _ -> {
+              list.each(members, fn(member) { io.println("  - " <> member) })
+            }
+          }
+        }
+        Error(e) -> io.println("  Error getting members: " <> e)
+      }
+    }
+    False -> io.println("\nThis node is not connected to any other nodes")
+  }
+}
+
+fn cluster_interactive_loop() {
+  io.println("\n=== Cluster Management (Press Ctrl+C to exit) ===")
+  io.println("Available commands:")
+  io.println("  1: Refresh status")
+  io.println("  2: Connect to a node")
+  io.println("  3: Join Khepri cluster")
+  io.println("  4: Leave Khepri cluster")
+  io.println("  5: Ping a node")
+  io.println("  0: Exit")
+
+  let input = case erlang.get_line("Enter command: ") {
+    Ok(line) -> string.trim(line)
+    Error(_) -> ""
+  }
+
+  case input {
+    "1" -> {
+      show_cluster_status()
+      cluster_interactive_loop()
+    }
+    "2" -> {
+      let node = case
+        erlang.get_line("Enter node name (e.g., node2@localhost): ")
+      {
+        Ok(line) -> string.trim(line)
+        Error(_) -> ""
+      }
+
+      case node {
+        "" -> {
+          io.println("Invalid node name")
+          cluster_interactive_loop()
+        }
+        _ -> {
+          case cluster.connect(node) {
+            Ok(_) -> io.println("Successfully connected to " <> node)
+            Error(e) -> io.println("Failed to connect: " <> e)
+          }
+          cluster_interactive_loop()
+        }
+      }
+    }
+    "3" -> {
+      let node = case erlang.get_line("Enter node name to join cluster: ") {
+        Ok(line) -> string.trim(line)
+        Error(_) -> ""
+      }
+
+      case node {
+        "" -> {
+          io.println("Invalid node name")
+          cluster_interactive_loop()
+        }
+        _ -> {
+          case cluster.join_cluster(node) {
+            Ok(_) ->
+              io.println("Successfully joined Khepri cluster via " <> node)
+            Error(e) -> io.println("Failed to join cluster: " <> e)
+          }
+          cluster_interactive_loop()
+        }
+      }
+    }
+    "4" -> {
+      case cluster.leave_cluster() {
+        Ok(_) -> io.println("Successfully left Khepri cluster")
+        Error(e) -> io.println("Failed to leave cluster: " <> e)
+      }
+      cluster_interactive_loop()
+    }
+    "5" -> {
+      let node = case erlang.get_line("Enter node name to ping: ") {
+        Ok(line) -> string.trim(line)
+        Error(_) -> ""
+      }
+
+      case node {
+        "" -> {
+          io.println("Invalid node name")
+          cluster_interactive_loop()
+        }
+        _ -> {
+          case cluster.ping_node(node) {
+            Ok(_) -> io.println("Node " <> node <> " is reachable")
+            Error(e) ->
+              io.println("Node " <> node <> " is not reachable: " <> e)
+          }
+          cluster_interactive_loop()
+        }
+      }
+    }
+    "0" -> {
+      io.println("Exiting cluster management")
+      Nil
+    }
+    _ -> {
+      io.println("Unknown command")
+      cluster_interactive_loop()
+    }
   }
 }
