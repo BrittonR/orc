@@ -156,7 +156,6 @@ pub fn put(
   }
 }
 
-// Get a value from the given path
 pub fn get(
   store_name: String,
   path: Path,
@@ -164,24 +163,69 @@ pub fn get(
   let store_atom = atom.create_from_string(store_name)
   let khepri_path = to_khepri_path(path)
 
+  // Attempt to get the result
   let result = do_khepri_get(store_atom, khepri_path)
 
-  case decode.run(result, result_tuple_decoder()) {
-    Ok(#("ok", value)) -> Ok(Some(value))
-    Ok(#("error", reason)) -> {
-      // Check if it's a not_found error
-      case is_atom_with_name(reason, "not_found") {
-        True -> Ok(None)
-        False -> {
-          let error_msg = dynamic.classify(reason)
-          Error(OtherError("Failed to get: " <> error_msg))
+  // Check if the result is a noproc error
+  let noproc_check = case dynamic.classify(result) {
+    "Tuple" -> {
+      case dynamic.tuple2(dynamic.dynamic, dynamic.dynamic)(result) {
+        Ok(#(first, _second)) -> {
+          // Check if the first element is the atom 'noproc'
+          case dynamic.classify(first) {
+            "Atom" -> {
+              let atom_result = atom.from_dynamic(first)
+              case atom_result {
+                Ok(atom_val) -> {
+                  let atom_str = atom.to_string(atom_val)
+                  case atom_str {
+                    "noproc" ->
+                      Error(OtherError("Process not running (noproc)"))
+                    _ -> Ok(None)
+                    // Continue with normal processing
+                  }
+                }
+                _ -> Ok(None)
+                // Continue with normal processing
+              }
+            }
+            _ -> Ok(None)
+            // Continue with normal processing
+          }
+        }
+        _ -> Ok(None)
+        // Continue with normal processing
+      }
+    }
+    _ -> Ok(None)
+    // Continue with normal processing
+  }
+
+  // If we detected a noproc error, return it immediately
+  case noproc_check {
+    Error(err) -> Error(err)
+    Ok(None) -> {
+      // Normal result handling
+      case decode.run(result, result_tuple_decoder()) {
+        Ok(#("ok", value)) -> Ok(Some(value))
+        Ok(#("error", reason)) -> {
+          // Check if it's a not_found error
+          case is_atom_with_name(reason, "not_found") {
+            True -> Ok(None)
+            False -> {
+              let error_msg = dynamic.classify(reason)
+              Error(OtherError("Failed to get: " <> error_msg))
+            }
+          }
+        }
+        _ -> {
+          // If we can't decode it as a tuple, just return the raw value
+          Ok(Some(result))
         }
       }
     }
-    _ -> {
-      // If we can't decode it as a tuple, just return the raw value
-      Ok(Some(result))
-    }
+    _ -> noproc_check
+    // This should never happen but it makes the type system happy
   }
 }
 
