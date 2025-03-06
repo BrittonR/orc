@@ -27,11 +27,11 @@ pub fn connect(remote_node: String) -> ClusterResult {
 //   erlang_set_cookie(cookie)
 // }
 
-@external(erlang, "khepri_cluster_compat", "join")
-fn join_khepri_cluster(remote_node: String) -> ClusterResult
+// @external(erlang, "khepri_cluster_compat", "join")
+// fn join_khepri_cluster(remote_node: String) -> ClusterResult
 
-@external(erlang, "khepri_cluster_compat", "leave")
-fn leave_khepri_cluster() -> ClusterResult
+// @external(erlang, "khepri_cluster_compat", "leave")
+// fn leave_khepri_cluster() -> ClusterResult
 
 /// Join a Khepri cluster by connecting to an existing member
 pub fn join_cluster(remote_node: String) -> ClusterResult {
